@@ -13,8 +13,52 @@ mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
 mp_holistic = mp.solutions.holistic
 
+# THIS CODE IS COMBINATION OF ALL THE CODES..
 
+# !pip install tflite-runtime
+import tflite_runtime.interpreter as tflite
 
+import pandas as pd
+import numpy as np
+import cv2
+import mediapipe as mp
+import matplotlib.pyplot as plt
+from IPython.display import display, clear_output
+import PIL.Image
+import tflite_runtime.interpreter as tflite
+
+mp_drawing = mp.solutions.drawing_utils
+mp_drawing_styles = mp.solutions.drawing_styles
+mp_holistic = mp.solutions.holistic
+
+ROWS_PER_FRAME = 543  # number of landmarks per frame
+
+def load_relevant_data_subset(pq_path):
+    data_columns = ['x', 'y', 'z']
+    data = pd.read_parquet(pq_path, columns=data_columns)
+    n_frames = int(len(data) / ROWS_PER_FRAME)
+    data = data.values.reshape(n_frames, ROWS_PER_FRAME, len(data_columns))
+    return data.astype(np.float32)
+
+def load_tflite_model(model_path):
+    interpreter = tflite.Interpreter(model_path)
+    interpreter.allocate_tensors()
+    return interpreter
+
+def preprocess_data(xyz_np):
+    # Add any necessary data preprocessing steps here
+    return xyz_np
+
+def make_predictions(interpreter, input_data):
+    input_tensor_index = interpreter.get_input_details()[0]['index']
+    output = np.zeros(interpreter.get_output_details()[0]['shape']).astype(np.float32)
+    
+    for frame_data in input_data:
+        interpreter.set_tensor(input_tensor_index, frame_data)
+        interpreter.invoke()
+        output += interpreter.get_tensor(output_index)
+
+    return output
 
 def create_frame_landmark_df(results,frame,xyz):
           
@@ -89,37 +133,34 @@ def create_frame_landmark_df(results,frame,xyz):
     return landmarks
 
 
-
-# For video file input:
-
-def caturing_video(xyz):
+def caturing_video(xyz, interpreter):
     all_landmarks = []
-    video_path = "demo.mp4"  # Replace with the path to your mp4 video file
+    video_path = "demo.mp4"
     cap = cv2.VideoCapture(video_path)
 
-    with mp_holistic.Holistic(
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5) as holistic:
+    with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
         frame = 0
         while cap.isOpened():
             frame += 1
             success, image = cap.read()
             if not success:
                 print("End of video.")
-                continue
+                break
 
-            # To improve performance, optionally mark the image as not writeable to
-            # pass by reference.
             image.flags.writeable = False
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             results = holistic.process(image)
 
-            # create landmark dataframe
+            # Create landmark dataframe
             landmarks = create_frame_landmark_df(results, frame, xyz)
-            print(landmarks)
-            print(len(all_landmarks))
             all_landmarks.append(landmarks)
-            print(len(all_landmarks))
+
+            # Make predictions using the loaded tflite model
+            xyz_np = load_relevant_data_subset('output.parquet')
+            preprocessed_data = preprocess_data(xyz_np)
+            predictions = make_predictions(interpreter, preprocessed_data)
+            predicted_sign = predictions.argmax()
+            print(f"Predicted Sign: {predicted_sign}")
 
             # Draw landmark annotation on the image.
             image.flags.writeable = True
@@ -136,30 +177,23 @@ def caturing_video(xyz):
                 mp_holistic.POSE_CONNECTIONS,
                 landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style())
 
-            # Display the image with landmarks using Matplotlib
             clear_output(wait=True)
             plt.imshow(image)
             plt.axis('off')
             plt.show()
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):  # Press 'q' to exit
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                print("Video interrupted.")
                 break
 
-    # Release the video capture object.
     cap.release()
-
-    return all_landmarks
-
 
 if __name__ == "__main__":
     xyz = pd.read_csv("/content/xyz_df.csv")
-    all_landmarks = caturing_video(xyz)
-    
-    try:
-        # Concatenate the list of DataFrames into a single DataFrame
-        landmarks = pd.concat(all_landmarks).reset_index(drop=True)
-        landmarks.to_parquet('output.parquet')
-        print("Successfully saved")
-    except Exception as e:
-        print("Error in saving the file:", e)
 
+    # Load the tflite model
+    model_path = "/content/model.tflite"
+    interpreter = load_tflite_model(model_path)
+
+    # Capture video and make predictions
+    caturing_video(xyz, interpreter)
