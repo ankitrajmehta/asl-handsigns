@@ -1,9 +1,8 @@
-#intial model v2.0
-
 import pandas as pd
 import numpy as np
 
-xyz=pd.read_csv("xyz_df.csv")
+
+xyz=pd.read_csv("initial_model\asl-handsigns\xyz_df.csv")  # give your own path hai
 
 import cv2
 import mediapipe as mp
@@ -16,9 +15,9 @@ mp_drawing_styles = mp.solutions.drawing_styles
 mp_holistic = mp.solutions.holistic
 
 # THIS CODE IS COMBINATION OF ALL THE CODES..
-
 # !pip install tflite-runtime
 import tflite_runtime.interpreter as tflite
+
 
 import pandas as pd
 import numpy as np
@@ -47,31 +46,37 @@ def load_tflite_model(model_path):
     interpreter.allocate_tensors()
     return interpreter
 
+
+
 def preprocess_data(xyz_np):
     # Add any necessary data preprocessing steps here
     return xyz_np
 
-def make_predictions(interpreter, input_data):
-    input_tensor_index = interpreter.get_input_details()[0]['index']
-    output = np.zeros(interpreter.get_output_details()[0]['shape']).astype(np.float32)
-    
-    for frame_data in input_data:
-        interpreter.set_tensor(input_tensor_index, frame_data)
-        interpreter.invoke()
-        output += interpreter.get_tensor(output_index)
+def pred_fn():
+#     input_tensor_index = interpreter.get_input_details()[0]['index']
+#     output = np.zeros(interpreter.get_output_details()[0]['shape']).astype(np.float32)
 
-    return output
+#     for frame_data in input_data:
+#         interpreter.set_tensor(input_tensor_index, frame_data)
+#         interpreter.invoke()
+#         output += interpreter.get_tensor(output_index)
 
-def create_frame_landmark_df(results,frame,xyz):
-          
-          # where 
+    interpreter = tflite.Interpreter("initial_model\asl-handsigns\model.tflite") # give your own path hai
+    found_signatures = list(interpreter.get_signature_list().keys())
+    prediction_fn = interpreter.get_signature_runner("serving_default")
+    return prediction_fn
+
+
+
+
+def create_frame_landmark_df(results,frame,xyz_skel):
+
+          # where
           # results = results of mediapipe
           # frame = frame number
           # xyz = dataset for the xyz of example data
-          
-    xyz_skel = xyz[['type','landmark_index']].drop_duplicates().drop_duplicates().reset_index(drop=True).copy()
 
-    landmarks = pd.DataFrame()
+
     face = pd.DataFrame()
     if results.face_landmarks is not None:
       for i,point in enumerate(results.face_landmarks.landmark):
@@ -109,7 +114,6 @@ def create_frame_landmark_df(results,frame,xyz):
 
     # right_hand['y'] = -right_hand['y']
 
-    landmarks = pd.DataFrame()
     face = face.reset_index() \
                 .rename(columns={'index': 'landmark_index'}) \
                 .assign(type='face')
@@ -121,7 +125,7 @@ def create_frame_landmark_df(results,frame,xyz):
                 .assign(type='left_hand')
     right_hand = right_hand.reset_index() \
                 .rename(columns={'index': 'landmark_index'}) \
-                .assign(type='face')
+                .assign(type='right_hand')
     face_reset = face.reset_index(drop=True)
     pose_reset = pose.reset_index(drop=True)
     left_hand_reset = left_hand.reset_index(drop=True)
@@ -134,11 +138,13 @@ def create_frame_landmark_df(results,frame,xyz):
 
     return landmarks
 
+def caturing_video(xyz):
 
-def caturing_video(xyz, interpreter):
+    prediction_fn = pred_fn()
     all_landmarks = []
-    video_path = "demo.mp4"
+    video_path = 'initial_model\asl-handsigns\demo.mp4' # give your own path hai
     cap = cv2.VideoCapture(video_path)
+    xyz_skel = xyz[['type','landmark_index']].drop_duplicates().drop_duplicates().reset_index(drop=True).copy()
 
     with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
         frame = 0
@@ -154,48 +160,35 @@ def caturing_video(xyz, interpreter):
             results = holistic.process(image)
 
             # Create landmark dataframe
-            landmarks = create_frame_landmark_df(results, frame, xyz)
+            landmarks = create_frame_landmark_df(results, frame, xyz_skel)
             all_landmarks.append(landmarks)
 
-            # Make predictions using the loaded tflite model
-            xyz_np = load_relevant_data_subset('output.parquet')
-            preprocessed_data = preprocess_data(xyz_np)
-            predictions = make_predictions(interpreter, preprocessed_data)
-            predicted_sign = predictions.argmax()
-            print(f"Predicted Sign: {predicted_sign}")
 
-            # Draw landmark annotation on the image.
-            image.flags.writeable = True
-            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-            mp_drawing.draw_landmarks(
-                image,
-                results.face_landmarks,
-                mp_holistic.FACEMESH_CONTOURS,
-                landmark_drawing_spec=None,
-                connection_drawing_spec=mp_drawing_styles.get_default_face_mesh_contours_style())
-            mp_drawing.draw_landmarks(
-                image,
-                results.pose_landmarks,
-                mp_holistic.POSE_CONNECTIONS,
-                landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style())
+        # Save the DataFrame to a parquet file
+        output_path = 'output.parquet'
+        all_landmarks_df = pd.concat(all_landmarks, ignore_index=True)
+        all_landmarks_df.to_parquet(output_path, index=False)
+        print(f"Landmarks saved to {output_path}")
 
-            clear_output(wait=True)
-            plt.imshow(image)
-            plt.axis('off')
-            plt.show()
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                print("Video interrupted.")
-                break
+        # Make predictions using the loaded tflite model
+        xyz_np = load_relevant_data_subset('output.parquet')
+        output = prediction_fn(inputs=xyz_np)
+        sign = output['outputs'].argmax()
+        print(f"Predicted Sign: {sign}")
+
 
     cap.release()
 
-if __name__ == "__main__":
-    xyz = pd.read_csv("/content/xyz_df.csv")
 
-    # Load the tflite model
-    model_path = "/content/model.tflite"
-    interpreter = load_tflite_model(model_path)
+
+if __name__ == "__main__":
+    xyz = pd.read_csv("initial_model\asl-handsigns\xyz_df.csv")  # give your own path hai
 
     # Capture video and make predictions
-    caturing_video(xyz, interpreter)
+    caturing_video(xyz)
+
+
+# Dictionaries to translate sign <-> ordinal encoded sign
+SIGN2ORD = train[['sign', 'sign_ord']].set_index('sign').squeeze().to_dict()
+ORD2SIGN = train[['sign_ord', 'sign']].set_index('sign_ord').squeeze().to_dict()
