@@ -1,10 +1,11 @@
-import tflite_runtime.interpreter as tflite
+# import tflite_runtime.interpreter as tflite
+import tensorflow as tf
 import pandas as pd
 import numpy as np
 import cv2
 import mediapipe as mp
 import json
-
+ 
 
 class HandSignRecognizer:
     def __init__(self):
@@ -14,8 +15,6 @@ class HandSignRecognizer:
         self.ROWS_PER_FRAME = 543
         xyz = pd.read_csv("xyz_df.csv")
         self.xyz_skel = xyz[['type', 'landmark_index']].drop_duplicates().reset_index(drop=True).copy()
-
-
         # Dictionaries to translate sign <-> ordinal encoded sign
         self.prediction_fn = self.pred_fn()
         json_file_path = 'sign_to_prediction_index_map.json'
@@ -70,7 +69,7 @@ class HandSignRecognizer:
         return sign, prediction['outputs'][pred]
 
     def pred_fn(self):
-        interpreter = tflite.Interpreter('model_new.tflite')
+        interpreter = tf.lite.Interpreter('model_new.tflite')
         found_signatures = list(interpreter.get_signature_list().keys())
         prediction_fn = interpreter.get_signature_runner("serving_default")
         return prediction_fn
@@ -116,8 +115,9 @@ class HandSignRecognizer:
         return ""
 
 
-if __name__ == "__main__":
-    recognizer = HandSignRecognizer()
-    video_path = 'cop-[POLICE]-[C-hand-version].mp4'
-    s = recognizer.vid_to_eng(video_path)
-    print(s)
+print("apun edar haii")
+recognizer = HandSignRecognizer()
+video_path = 'cop-[POLICE]-[C-hand-version].mp4'
+s = recognizer.vid_to_eng(video_path)
+print(s)
+

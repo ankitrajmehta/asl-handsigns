@@ -1,0 +1,7 @@
+mediapipe==0.8.7 
+tensorflow 
+opencv-python
+Pillow
+pandas
+numpy
+
