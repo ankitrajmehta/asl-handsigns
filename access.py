@@ -15,7 +15,7 @@ class HandSignRecognizer:
         self.ROWS_PER_FRAME = 543
         self.face = pd.DataFrame()
         self.frame_skip = 8
-        print('init ma xa')
+        
         xyz = pd.read_csv("xyz_df.csv")
         self.xyz_skel = xyz[['type', 'landmark_index']].drop_duplicates().reset_index(drop=True).copy()
         # Dictionaries to translate sign <-> ordinal encoded sign
@@ -27,7 +27,7 @@ class HandSignRecognizer:
 
         # Now, json_data contains the content of the JSON file as a Python dictionary
         self.n2sign = {value: key for key, value in json_data.items()}
-        print('init ko last')
+        
 
     def create_frame_landmark_df(self, results, frame):
         
@@ -133,7 +133,7 @@ class HandSignRecognizer:
     
 
 recognizer = HandSignRecognizer()
-video_path = r"test.mp4"
+video_path = r"tes22.mp4"
 
 start_time = time.time()
 s,a = recognizer.vid_to_eng(video_path)
