@@ -1,5 +1,6 @@
 # import tflite_runtime.interpreter as tflite
 import tensorflow as tf
+import time
 import pandas as pd
 import numpy as np
 import cv2
@@ -9,10 +10,12 @@ import json
 
 class HandSignRecognizer:
     def __init__(self):
-        self.mp_drawing = mp.solutions.drawing_utils
-        self.mp_drawing_styles = mp.solutions.drawing_styles
+
         self.mp_holistic = mp.solutions.holistic
         self.ROWS_PER_FRAME = 543
+        self.face = pd.DataFrame()
+        self.frame_skip = 8
+        print('init ma xa')
         xyz = pd.read_csv("xyz_df.csv")
         self.xyz_skel = xyz[['type', 'landmark_index']].drop_duplicates().reset_index(drop=True).copy()
         # Dictionaries to translate sign <-> ordinal encoded sign
@@ -24,18 +27,21 @@ class HandSignRecognizer:
 
         # Now, json_data contains the content of the JSON file as a Python dictionary
         self.n2sign = {value: key for key, value in json_data.items()}
-
+        print('init ko last')
 
     def create_frame_landmark_df(self, results, frame):
-        face = pd.DataFrame()
+        
         pose = pd.DataFrame()
         left_hand = pd.DataFrame()
         right_hand = pd.DataFrame()
-        if results.face_landmarks is not None:
-            for i, point in enumerate(results.face_landmarks.landmark):
-                face.loc[i, 'x'] = point.x
-                face.loc[i, 'y'] = point.y
-                face.loc[i, 'z'] = point.z
+        
+        if (frame/self.frame_skip)<2:
+            if results.face_landmarks is not None:
+                for i, point in enumerate(results.face_landmarks.landmark):
+                    self.face.loc[i, 'x'] = point.x
+                    self.face.loc[i, 'y'] = point.y
+                    self.face.loc[i, 'z'] = point.z
+           
         if results.pose_landmarks is not None:
             for i, point in enumerate(results.pose_landmarks.landmark):
                 pose.loc[i, 'x'] = point.x
@@ -52,7 +58,8 @@ class HandSignRecognizer:
                 right_hand.loc[i, 'y'] = point.y
                 right_hand.loc[i, 'z'] = point.z
 
-        face = face.reset_index().rename(columns={'index': 'landmark_index'}).assign(type='face')
+        face = self.face
+        face = face.reset_index().rename(columns={'index': 'landmark_index'}).assign(type='face') ##
         pose = pose.reset_index().rename(columns={'index': 'landmark_index'}).assign(type='pose')
         left_hand = left_hand.reset_index().rename(columns={'index': 'landmark_index'}).assign(type='left_hand')
         right_hand = right_hand.reset_index().rename(columns={'index': 'landmark_index'}).assign(type='right_hand')
@@ -70,13 +77,14 @@ class HandSignRecognizer:
 
     def pred_fn(self):
         interpreter = tf.lite.Interpreter('model_new.tflite')
-        found_signatures = list(interpreter.get_signature_list().keys())
         prediction_fn = interpreter.get_signature_runner("serving_default")
         return prediction_fn
 
     def capturing_video(self, video_path):
         all_landmarks = []
         cap = cv2.VideoCapture(video_path)
+        
+
 
         with self.mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
             frame = 0
@@ -87,13 +95,18 @@ class HandSignRecognizer:
                     print("End of video.")
                     break
 
-                if (frame % 3) == 0:
-                    image.flags.writeable = False
+                if (frame % self.frame_skip) == 0:
+                    
+                    # image.flags.writeable = False
                     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                     results = holistic.process(image)
+                    #results = hands.process(image)
 
                     landmarks_df = self.create_frame_landmark_df(results, frame)
                     all_landmarks.append(landmarks_df)
+                    
+                    
+                    
 
         cap.release()
         all_landmarks_df = pd.concat(all_landmarks).reset_index(drop=True)
@@ -107,18 +120,21 @@ class HandSignRecognizer:
         return data.astype(np.float32)
 
     def vid_to_eng(self, video_path):
+        
         landmarks = self.capturing_video(video_path)
         xyz_npp = self.load_relevant_data_subset(landmarks)
         sign, confidence = self.predict(xyz_npp)
         if confidence > 4:
-            return sign + " "
-        return ""
+            return sign , confidence
+        return "", confidence
+    
 
-
-print("apun edar haii")
 recognizer = HandSignRecognizer()
-video_path = 'cop-[POLICE]-[C-hand-version].mp4'
-s = recognizer.vid_to_eng(video_path)
-print(s)
+video_path = r"cop-[POLICE]-[C-hand-version].mp4"
 
-# 
+start_time = time.time()
+s,a = recognizer.vid_to_eng(video_path)
+end_time = time.time()
+
+
+
