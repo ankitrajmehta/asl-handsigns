@@ -36,11 +36,15 @@ class HandSignRecognizer:
         right_hand = pd.DataFrame()
         
         if (frame/self.frame_skip)<2:
+            
             if results.face_landmarks is not None:
                 for i, point in enumerate(results.face_landmarks.landmark):
                     self.face.loc[i, 'x'] = point.x
                     self.face.loc[i, 'y'] = point.y
                     self.face.loc[i, 'z'] = point.z
+            face = self.face
+            face = face.reset_index().rename(columns={'index': 'landmark_index'}).assign(type='face') 
+            self.face=face
            
         if results.pose_landmarks is not None:
             for i, point in enumerate(results.pose_landmarks.landmark):
@@ -58,12 +62,11 @@ class HandSignRecognizer:
                 right_hand.loc[i, 'y'] = point.y
                 right_hand.loc[i, 'z'] = point.z
 
-        face = self.face
-        face = face.reset_index().rename(columns={'index': 'landmark_index'}).assign(type='face') ##
+        
         pose = pose.reset_index().rename(columns={'index': 'landmark_index'}).assign(type='pose')
         left_hand = left_hand.reset_index().rename(columns={'index': 'landmark_index'}).assign(type='left_hand')
         right_hand = right_hand.reset_index().rename(columns={'index': 'landmark_index'}).assign(type='right_hand')
-        landmarks = pd.concat([face, pose, left_hand, right_hand]).reset_index(drop=True)
+        landmarks = pd.concat([self.face, pose, left_hand, right_hand]).reset_index(drop=True)
         landmarks = self.xyz_skel.merge(landmarks, on=['type', 'landmark_index'], how='left')
         landmarks = landmarks.assign(frame=frame)
         return landmarks
@@ -130,11 +133,15 @@ class HandSignRecognizer:
     
 
 recognizer = HandSignRecognizer()
-video_path = r"cop-[POLICE]-[C-hand-version].mp4"
+video_path = r"test.mp4"
 
 start_time = time.time()
 s,a = recognizer.vid_to_eng(video_path)
+print(s)
+print(a)
 end_time = time.time()
+time_take = end_time - start_time
+print(time_take)
 
 
 
